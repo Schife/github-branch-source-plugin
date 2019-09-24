@@ -51,6 +51,19 @@ import hudson.model.queue.Tasks;
 import hudson.security.ACL;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
+import jenkins.model.Jenkins;
+import jenkins.scm.api.SCMSourceOwner;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.gitclient.GitClient;
+import org.jenkinsci.plugins.github.config.GitHubServerConfig;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.github.*;
+import org.kohsuke.github.extras.OkHttpConnector;
+
+import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -60,32 +73,11 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.WeakHashMap;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
-import javax.annotation.Nonnull;
-import jenkins.model.Jenkins;
-import jenkins.scm.api.SCMSourceOwner;
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang.StringUtils;
-import org.jenkinsci.plugins.gitclient.GitClient;
-import org.jenkinsci.plugins.github.config.GitHubServerConfig;
-import org.kohsuke.accmod.Restricted;
-import org.kohsuke.accmod.restrictions.NoExternalUse;
-import org.kohsuke.github.GHRateLimit;
-import org.kohsuke.github.GitHub;
-import org.kohsuke.github.GitHubBuilder;
-import org.kohsuke.github.HttpConnector;
-import org.kohsuke.github.RateLimitHandler;
-import org.kohsuke.github.extras.OkHttpConnector;
 
 import static java.util.logging.Level.FINE;
 
@@ -95,14 +87,14 @@ import static java.util.logging.Level.FINE;
 public class Connector {
     private static final Logger LOGGER = Logger.getLogger(Connector.class.getName());
 
-    private static final Map<GitHub,Long> lastUsed = new HashMap<>();
+    private static final Map<GitHub, Long> lastUsed = new HashMap<>();
     private static final Map<Details, GitHub> githubs = new HashMap<>();
     private static final Map<GitHub, Integer> usage = new HashMap<>();
-    private static final Map<TaskListener, Map<GitHub,Void>> checked = new WeakHashMap<>();
+    private static final Map<TaskListener, Map<GitHub, Void>> checked = new WeakHashMap<>();
     private static final long API_URL_REVALIDATE_MILLIS = TimeUnit.MINUTES.toMillis(5);
-    private static final Map<String,Long> apiUrlValid = new LinkedHashMap<String,Long>(){
+    private static final Map<String, Long> apiUrlValid = new LinkedHashMap<String, Long>() {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String,Long> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
             Long t = eldest.getValue();
             return t == null || t < System.currentTimeMillis() - API_URL_REVALIDATE_MILLIS;
         }
@@ -114,6 +106,8 @@ public class Connector {
     private Connector() {
         throw new IllegalAccessError("Utility class");
     }
+
+
 
     /**
      * Retained for binary compatibility only.
@@ -182,7 +176,7 @@ public class Connector {
         if (!scanCredentialsId.isEmpty()) {
             ListBoxModel options = listScanCredentials(context, apiUri);
             boolean found = false;
-            for (ListBoxModel.Option b: options) {
+            for (ListBoxModel.Option b : options) {
                 if (scanCredentialsId.equals(b.value)) {
                     found = true;
                     break;
@@ -203,7 +197,7 @@ public class Connector {
                     try {
                         try {
                             return FormValidation.ok("User %s", connector.getMyself().getLogin());
-                        } catch (IOException e){
+                        } catch (IOException e) {
                             return FormValidation.error("Invalid credentials");
                         }
                     } finally {
@@ -255,15 +249,15 @@ public class Connector {
             return null;
         } else {
             return CredentialsMatchers.firstOrNull(
-                CredentialsProvider.lookupCredentials(
-                    StandardUsernameCredentials.class,
-                    context,
-                    context instanceof Queue.Task
-                            ? Tasks.getDefaultAuthenticationOf((Queue.Task) context)
-                            : ACL.SYSTEM,
-                    githubDomainRequirements(apiUri)
-                ),
-                CredentialsMatchers.allOf(CredentialsMatchers.withId(scanCredentialsId), githubScanCredentialsMatcher())
+                    CredentialsProvider.lookupCredentials(
+                            StandardUsernameCredentials.class,
+                            context,
+                            context instanceof Queue.Task
+                                    ? Tasks.getDefaultAuthenticationOf((Queue.Task) context)
+                                    : ACL.SYSTEM,
+                            githubDomainRequirements(apiUri)
+                    ),
+                    CredentialsMatchers.allOf(CredentialsMatchers.withId(scanCredentialsId), githubScanCredentialsMatcher())
             );
         }
     }
@@ -271,8 +265,8 @@ public class Connector {
     /**
      * Retained for binary compatibility only.
      *
-     * @param context           the context.
-     * @param apiUri            the API endpoint.
+     * @param context the context.
+     * @param apiUri  the API endpoint.
      * @return the {@link StandardCredentials} or {@code null}
      * @deprecated use {@link #listCheckoutCredentials(Item, String)}
      */
@@ -328,7 +322,8 @@ public class Connector {
         }
     }
 
-    public static @Nonnull GitHub connect(@CheckForNull String apiUri, @CheckForNull StandardCredentials credentials) throws IOException {
+    public static @Nonnull
+    GitHub connect(@CheckForNull String apiUri, @CheckForNull StandardCredentials credentials) throws IOException {
         String apiUrl = Util.fixEmptyAndTrim(apiUri);
         apiUrl = apiUrl != null ? apiUrl : GitHubServerConfig.GITHUB_URL;
         String username;
@@ -473,7 +468,6 @@ public class Connector {
      * Uses proxy if configured on pluginManager/advanced page
      *
      * @param host GitHub's hostname to build proxy to
-     *
      * @return proxy to use it in connector. Should not be null as it can lead to unexpected behaviour
      */
     @Nonnull
@@ -531,12 +525,17 @@ public class Connector {
         }
     }
 
-    /*package*/ static void checkConnectionValidity(String apiUri, @NonNull TaskListener listener,
-                                                    StandardCredentials credentials,
-                                                    GitHub github)
+    static void useGitHub(String api, Consumer<GitHub> consumer) {
+        githubs.keySet().stream().filter(gh -> gh.apiUrl.contains(api)).findFirst().flatMap(Connector::getGHForDetails).ifPresent(consumer);
+    }
+
+    /*package*/
+    static void checkConnectionValidity(String apiUri, @NonNull TaskListener listener,
+                                        StandardCredentials credentials,
+                                        GitHub github)
             throws IOException {
         synchronized (githubs) {
-            Map<GitHub,Void> hubs = checked.get(listener);
+            Map<GitHub, Void> hubs = checked.get(listener);
             if (hubs != null && hubs.containsKey(github)) {
                 // only check if not already in use
                 return;
@@ -557,8 +556,8 @@ public class Connector {
             listener.getLogger().println(GitHubConsoleNote.create(
                     System.currentTimeMillis(),
                     String.format("Connecting to %s using %s",
-                    apiUri == null ? GitHubSCMSource.GITHUB_URL : apiUri,
-                    CredentialsNameProvider.name(credentials))
+                            apiUri == null ? GitHubSCMSource.GITHUB_URL : apiUri,
+                            CredentialsNameProvider.name(credentials))
             ));
         } else {
             listener.getLogger().println(GitHubConsoleNote.create(System.currentTimeMillis(), String.format(
@@ -590,7 +589,7 @@ public class Connector {
                         rateLimit.remaining, rateLimit.remaining - ideal, rateLimit.limit,
                         Util.getTimeSpanString(rateLimitResetMillis)
                 )));
-            } else  if (rateLimit.remaining < ideal) {
+            } else if (rateLimit.remaining < ideal) {
                 check = true;
                 final long expiration;
                 if (rateLimit.remaining < buffer) {
@@ -657,6 +656,8 @@ public class Connector {
         }
     }
 
+
+
     @Extension
     public static class UnusedConnectionDestroyer extends PeriodicWork {
 
@@ -679,6 +680,16 @@ public class Connector {
                         unused(entry.getKey());
                     }
                 }
+            }
+        }
+    }
+
+    private static Optional<GitHub> getGHForDetails(Details details) {
+        synchronized (githubs) {
+            if (githubs.containsKey(details)) {
+                return Optional.of(githubs.get(details));
+            } else {
+                return Optional.empty();
             }
         }
     }

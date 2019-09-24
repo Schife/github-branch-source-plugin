@@ -162,6 +162,21 @@ public class EventsTest {
         waitAndAssertReceived(false);
     }
 
+    @Test
+    public void given_ghPullIssueCommentRequestEventSync_then_updatedHeadEventFired() throws Exception {
+        PullRequestCommentGHEventSubscriber subscriber = new PullRequestCommentGHEventSubscriber(gitHubProvider);
+
+        firedEventType = SCMEvent.Type.UPDATED;
+        ghEvent = callOnEvent(subscriber, "EventsTest/issueCommentEventCreated.json");
+        waitAndAssertReceived(true);
+    }
+
+    private GHSubscriberEvent callOnEvent(PullRequestCommentGHEventSubscriber subscriber, String s) throws IOException {
+        GHSubscriberEvent event = createEvent(s);
+        subscriber.onEvent(event);
+        return event;
+    }
+
     private GHSubscriberEvent callOnEvent(PushGHEventSubscriber subscriber, String eventPayloadFile) throws IOException {
         GHSubscriberEvent event = createEvent(eventPayloadFile);
         subscriber.onEvent(event);
@@ -179,6 +194,8 @@ public class EventsTest {
         subscriber.onEvent(event);
         return event;
     }
+
+
 
     private GHSubscriberEvent createEvent(String eventPayloadFile) throws IOException {
         String payload = IOUtils.toString(getClass().getResourceAsStream(eventPayloadFile));

@@ -81,25 +81,7 @@ public class PushGHEventSubscriber extends GHEventsSubscriber {
      */
     @Override
     protected boolean isApplicable(@Nullable Item project) {
-        if (project != null) {
-            if (project instanceof SCMSourceOwner) {
-                SCMSourceOwner owner = (SCMSourceOwner) project;
-                for (SCMSource source : owner.getSCMSources()) {
-                    if (source instanceof GitHubSCMSource) {
-                        return true;
-                    }
-                }
-            }
-            if (project.getParent() instanceof SCMSourceOwner) {
-                SCMSourceOwner owner = (SCMSourceOwner) project.getParent();
-                for (SCMSource source : owner.getSCMSources()) {
-                    if (source instanceof GitHubSCMSource) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+        return PullRequestCommentGHEventSubscriber.isBuildablePr(project);
     }
 
     /**
